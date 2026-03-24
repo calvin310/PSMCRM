@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import type { CalendarEvent } from '@/lib/calendar'
 
 type Meeting = {
   id: string
@@ -34,14 +35,26 @@ function driveUrl(fileId: string) {
   return `https://docs.google.com/document/d/${fileId}/edit`
 }
 
+function formatEventTime(event: CalendarEvent): string {
+  const start = event.start.dateTime ?? event.start.date ?? ''
+  if (!start) return ''
+  const d = new Date(start)
+  if (!event.start.dateTime) {
+    return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  }
+  return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) +
+    ' at ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+}
+
 export default function MeetingHistory({ accountId }: { accountId: string }) {
   const [meetings, setMeetings] = useState<Meeting[]>([])
+  const [upcoming, setUpcoming] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [transcriptOpen, setTranscriptOpen] = useState<Set<string>>(new Set())
 
   // Reassign state
-  const [reassigning, setReassigning] = useState<string | null>(null) // meeting id
+  const [reassigning, setReassigning] = useState<string | null>(null)
   const [allAccounts, setAllAccounts] = useState<Account[]>([])
   const [reassignTarget, setReassignTarget] = useState('')
   const [reassignSaving, setReassignSaving] = useState(false)
@@ -50,11 +63,14 @@ export default function MeetingHistory({ accountId }: { accountId: string }) {
     setLoading(true)
     fetch(`/api/accounts/${accountId}/meetings`)
       .then((r) => r.json())
-      .then((d) => { setMeetings(d.meetings ?? []); setLoading(false) })
+      .then((d) => {
+        setMeetings(d.meetings ?? [])
+        setUpcoming(d.upcoming ?? [])
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
   }, [accountId])
 
-  // Fetch all accounts when reassign is first opened
   async function openReassign(meetingId: string) {
     setReassigning(meetingId)
     setReassignTarget('')
@@ -101,156 +117,192 @@ export default function MeetingHistory({ accountId }: { accountId: string }) {
   }
 
   if (loading) return <p className="text-sm text-gray-400 italic py-8 text-center">Loading...</p>
-  if (meetings.length === 0) return <p className="text-sm text-gray-400 italic py-8">No meeting history yet.</p>
 
   return (
-    <div className="flex flex-col gap-3 pt-2">
-      {meetings.map((m) => {
-        const isOpen = expanded.has(m.id)
-        const dateStr = m.meeting_date
-          ? new Date(m.meeting_date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-          : new Date(m.processed_at).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    <div className="flex flex-col gap-4 pt-2">
 
-        return (
-          <div key={m.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            {/* Row header */}
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <button
-                onClick={() => toggle(m.id)}
-                className="flex items-center gap-3 min-w-0 flex-1 text-left hover:opacity-80 transition-opacity"
-              >
-                <span className="text-sm font-medium text-gray-900 truncate">{dateStr}</span>
-                {m.health_status && (
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded border flex-shrink-0 ${HEALTH_CLS[m.health_status] ?? ''}`}>
-                    {HEALTH_LABEL[m.health_status] ?? m.health_status}
-                  </span>
-                )}
-                {m.file_name && (
-                  <span className="text-xs text-gray-400 truncate hidden sm:block">{m.file_name}</span>
-                )}
-              </button>
-
-              {/* Actions: Drive link + reassign + expand */}
-              <div className="flex items-center gap-2 ml-3 shrink-0">
-                {m.file_id && (
-                  <a
-                    href={driveUrl(m.file_id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open in Google Docs"
-                    onClick={e => e.stopPropagation()}
-                    className="text-xs text-gray-400 hover:text-indigo-600 transition-colors px-1"
-                  >
-                    ↗ Doc
-                  </a>
-                )}
-                <button
-                  onClick={() => reassigning === m.id ? setReassigning(null) : openReassign(m.id)}
-                  title="Move to different account"
-                  className="text-xs text-gray-400 hover:text-gray-700 transition-colors px-1"
-                >
-                  Move
-                </button>
-                <button onClick={() => toggle(m.id)} className="text-xs text-gray-400">
-                  {isOpen ? '▲' : '▼'}
-                </button>
+      {/* Upcoming section */}
+      {upcoming.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Upcoming</p>
+          <div className="flex flex-col gap-2">
+            {upcoming.map(event => (
+              <div key={event.id} className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 flex items-center gap-3">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-blue-900 truncate">{event.summary || 'Untitled meeting'}</p>
+                  <p className="text-xs text-blue-600 mt-0.5">{formatEventTime(event)}</p>
+                </div>
+                <span className="text-xs text-blue-500 border border-blue-200 px-2 py-0.5 rounded bg-white">Upcoming</span>
               </div>
-            </div>
-
-            {/* Reassign panel */}
-            {reassigning === m.id && (
-              <div className="border-t border-dashed border-gray-200 px-5 py-3 bg-gray-50 flex items-center gap-2">
-                <select
-                  value={reassignTarget}
-                  onChange={e => setReassignTarget(e.target.value)}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
-                >
-                  <option value="">Move to account...</option>
-                  {allAccounts.map(a => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => handleReassign(m.id)}
-                  disabled={!reassignTarget || reassignSaving}
-                  className="text-sm font-medium bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                >
-                  {reassignSaving ? 'Moving...' : 'Move'}
-                </button>
-                <button
-                  onClick={() => setReassigning(null)}
-                  className="text-sm text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-white transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-
-            {/* Expanded detail */}
-            {isOpen && (
-              <div className="border-t border-gray-100 px-5 py-4 flex flex-col gap-4">
-                {m.health_reason && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Health note</p>
-                    <p className="text-sm text-gray-700">{m.health_reason}</p>
-                  </div>
-                )}
-                {m.summary && m.summary.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Summary</p>
-                    <ul className="space-y-1">
-                      {m.summary.map((item, i) => (
-                        <li key={i} className="flex gap-2 text-sm text-gray-700">
-                          <span className="text-gray-400 mt-0.5">•</span><span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {m.psm_action_items && m.psm_action_items.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">PSM action items</p>
-                    <ul className="space-y-1">
-                      {m.psm_action_items.map((item, i) => (
-                        <li key={i} className="flex gap-2 text-sm text-gray-700">
-                          <span className="text-gray-400 mt-0.5">•</span><span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {m.protocol_action_items && m.protocol_action_items.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Protocol action items</p>
-                    <ul className="space-y-1">
-                      {m.protocol_action_items.map((item, i) => (
-                        <li key={i} className="flex gap-2 text-sm text-gray-700">
-                          <span className="text-gray-400 mt-0.5">•</span><span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {m.raw_transcript && (
-                  <div>
-                    <button
-                      onClick={() => toggleTranscript(m.id)}
-                      className="text-xs text-gray-400 hover:text-gray-700 transition-colors"
-                    >
-                      {transcriptOpen.has(m.id) ? '▲ Hide transcript' : '▼ Show full transcript'}
-                    </button>
-                    {transcriptOpen.has(m.id) && (
-                      <pre className="mt-2 text-xs text-gray-600 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 max-h-96 overflow-y-auto border border-gray-100">
-                        {m.raw_transcript}
-                      </pre>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+            ))}
           </div>
-        )
-      })}
+        </div>
+      )}
+
+      {/* Past meetings */}
+      {meetings.length === 0 && upcoming.length === 0 && (
+        <p className="text-sm text-gray-400 italic py-8">No meetings yet.</p>
+      )}
+
+      {meetings.length === 0 && upcoming.length > 0 && (
+        <p className="text-sm text-gray-400 italic">No past meeting notes yet.</p>
+      )}
+
+      {meetings.length > 0 && (
+        <div>
+          {upcoming.length > 0 && (
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Past notes</p>
+          )}
+          <div className="flex flex-col gap-3">
+            {meetings.map((m) => {
+              const isOpen = expanded.has(m.id)
+              const dateStr = m.meeting_date
+                ? new Date(m.meeting_date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                : new Date(m.processed_at).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+
+              return (
+                <div key={m.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  {/* Row header */}
+                  <div className="flex items-center justify-between px-5 py-3.5">
+                    <button
+                      onClick={() => toggle(m.id)}
+                      className="flex items-center gap-3 min-w-0 flex-1 text-left hover:opacity-80 transition-opacity"
+                    >
+                      <span className="text-sm font-medium text-gray-900 truncate">{dateStr}</span>
+                      {m.health_status && (
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded border flex-shrink-0 ${HEALTH_CLS[m.health_status] ?? ''}`}>
+                          {HEALTH_LABEL[m.health_status] ?? m.health_status}
+                        </span>
+                      )}
+                      {m.file_name && (
+                        <span className="text-xs text-gray-400 truncate hidden sm:block">{m.file_name}</span>
+                      )}
+                    </button>
+
+                    <div className="flex items-center gap-2 ml-3 shrink-0">
+                      {m.file_id && (
+                        <a
+                          href={driveUrl(m.file_id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open in Google Docs"
+                          onClick={e => e.stopPropagation()}
+                          className="text-xs text-gray-400 hover:text-indigo-600 transition-colors px-1"
+                        >
+                          ↗ Doc
+                        </a>
+                      )}
+                      <button
+                        onClick={() => reassigning === m.id ? setReassigning(null) : openReassign(m.id)}
+                        title="Move to different account"
+                        className="text-xs text-gray-400 hover:text-gray-700 transition-colors px-1"
+                      >
+                        Move
+                      </button>
+                      <button onClick={() => toggle(m.id)} className="text-xs text-gray-400">
+                        {isOpen ? '▲' : '▼'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Reassign panel */}
+                  {reassigning === m.id && (
+                    <div className="border-t border-dashed border-gray-200 px-5 py-3 bg-gray-50 flex items-center gap-2">
+                      <select
+                        value={reassignTarget}
+                        onChange={e => setReassignTarget(e.target.value)}
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      >
+                        <option value="">Move to account...</option>
+                        {allAccounts.map(a => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleReassign(m.id)}
+                        disabled={!reassignTarget || reassignSaving}
+                        className="text-sm font-medium bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                      >
+                        {reassignSaving ? 'Moving...' : 'Move'}
+                      </button>
+                      <button
+                        onClick={() => setReassigning(null)}
+                        className="text-sm text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-white transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Expanded detail */}
+                  {isOpen && (
+                    <div className="border-t border-gray-100 px-5 py-4 flex flex-col gap-4">
+                      {m.health_reason && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Health note</p>
+                          <p className="text-sm text-gray-700">{m.health_reason}</p>
+                        </div>
+                      )}
+                      {m.summary && m.summary.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Summary</p>
+                          <ul className="space-y-1">
+                            {m.summary.map((item, i) => (
+                              <li key={i} className="flex gap-2 text-sm text-gray-700">
+                                <span className="text-gray-400 mt-0.5">•</span><span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {m.psm_action_items && m.psm_action_items.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">PSM action items</p>
+                          <ul className="space-y-1">
+                            {m.psm_action_items.map((item, i) => (
+                              <li key={i} className="flex gap-2 text-sm text-gray-700">
+                                <span className="text-gray-400 mt-0.5">•</span><span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {m.protocol_action_items && m.protocol_action_items.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Protocol action items</p>
+                          <ul className="space-y-1">
+                            {m.protocol_action_items.map((item, i) => (
+                              <li key={i} className="flex gap-2 text-sm text-gray-700">
+                                <span className="text-gray-400 mt-0.5">•</span><span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {m.raw_transcript && (
+                        <div>
+                          <button
+                            onClick={() => toggleTranscript(m.id)}
+                            className="text-xs text-gray-400 hover:text-gray-700 transition-colors"
+                          >
+                            {transcriptOpen.has(m.id) ? '▲ Hide transcript' : '▼ Show full transcript'}
+                          </button>
+                          {transcriptOpen.has(m.id) && (
+                            <pre className="mt-2 text-xs text-gray-600 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 max-h-96 overflow-y-auto border border-gray-100">
+                              {m.raw_transcript}
+                            </pre>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

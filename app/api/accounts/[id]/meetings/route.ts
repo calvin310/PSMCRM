@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import { getEventsForDateRange, refreshCalendarToken } from '@/lib/calendar'
+import type { CalendarEvent } from '@/lib/calendar'
 
 export async function GET(
   _request: NextRequest,
@@ -18,7 +20,45 @@ export async function GET(
     .order('processed_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ meetings: meetings ?? [] })
+
+  // Fetch upcoming calendar events linked to this account
+  let upcoming: CalendarEvent[] = []
+  try {
+    const { data: links } = await supabase
+      .from('meeting_links')
+      .select('calendar_event_id')
+      .eq('account_id', id)
+      .eq('user_id', user.id)
+
+    const linkedEventIds = new Set((links ?? []).map((l: { calendar_event_id: string }) => l.calendar_event_id))
+
+    if (linkedEventIds.size > 0) {
+      const { data: calConn } = await supabase
+        .from('calendar_connections')
+        .select('access_token, refresh_token, token_expires_at')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (calConn) {
+        let token = calConn.access_token as string
+        if (
+          calConn.token_expires_at && calConn.refresh_token &&
+          new Date(calConn.token_expires_at as string).getTime() - Date.now() < 10 * 60 * 1000
+        ) {
+          const refreshed = await refreshCalendarToken(calConn.refresh_token as string, user.id)
+          token = refreshed.access_token
+        }
+        const timeMin = new Date().toISOString()
+        const timeMax = new Date(Date.now() + 30 * 86400000).toISOString()
+        const allEvents = await getEventsForDateRange(token, timeMin, timeMax)
+        upcoming = allEvents.filter(e => linkedEventIds.has(e.id))
+      }
+    }
+  } catch {
+    // Non-fatal — upcoming stays empty
+  }
+
+  return NextResponse.json({ meetings: meetings ?? [], upcoming })
 }
 
 // PATCH — reassign a meeting to a different account

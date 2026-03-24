@@ -17,7 +17,7 @@ export default function AccountTabs({
       <div className="flex items-center gap-0 border-b border-gray-200 -mb-1">
         {([
           { id: 'overview', label: 'Overview' },
-          { id: 'history', label: 'Meeting history' },
+          { id: 'history', label: 'Meetings' },
         ] as const).map((t) => (
           <button
             key={t.id}
