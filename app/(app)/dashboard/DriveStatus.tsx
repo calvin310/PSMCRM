@@ -32,7 +32,7 @@ export default function DriveStatus({
       const data = await res.json()
       if (!res.ok) {
         setIsError(true)
-        setMessage('Sync failed — try again')
+        setMessage(`Sync failed: ${data.error ?? 'unknown error'}`)
       } else {
         setMessage(`Done — ${data.new_notes} new note${data.new_notes === 1 ? '' : 's'} ready to review`)
         setTimeout(() => setMessage(null), 3000)

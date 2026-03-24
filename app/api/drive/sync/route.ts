@@ -7,8 +7,11 @@ import { getEventsForDateRange, type CalendarEvent } from '@/lib/calendar'
 // ── Fuzzy title matching ───────────────────────────────────────────────────
 
 function extractMeetingTitle(fileName: string): string {
+  // Old format: "Notes from Weekly Sync Hyperion"
+  // New format: "Weekly Sync Hyperion - 2026/03/23 08:27 EDT - Notes by Gemini"
   return fileName
     .replace(/^Notes from\s+/i, '')
+    .replace(/\s+-\s+\d{4}[\/\-]\d{2}[\/\-]\d{2}.*?Notes by Gemini.*$/i, '')
     .replace(/\.docx?$/i, '')
     .trim()
 }
@@ -256,6 +259,12 @@ export async function POST() {
     return NextResponse.json({ error: 'No Drive connection found' }, { status: 404 })
   }
 
-  const newCount = await syncConnection(null, connection)
-  return NextResponse.json({ success: true, new_notes: newCount })
+  try {
+    const newCount = await syncConnection(null, connection)
+    return NextResponse.json({ success: true, new_notes: newCount })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[drive/sync POST]', message)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }

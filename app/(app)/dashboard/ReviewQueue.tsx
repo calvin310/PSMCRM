@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 
+const CREATE_NEW = '__create_new__'
+
 type PendingNote = {
   id: string
   file_id: string
@@ -29,19 +31,75 @@ function NoteCard({
   note,
   accounts,
   onRemove,
+  onAccountCreated,
 }: {
   note: PendingNote
   accounts: Account[]
   onRemove: (id: string) => void
+  onAccountCreated: (account: Account) => void
 }) {
   const [selectedAccountId, setSelectedAccountId] = useState('')
+  const [newAccountName, setNewAccountName] = useState('')
+  const [creatingAccount, setCreatingAccount] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [dismissing, setDismissing] = useState(false)
 
+  const isCreatingNew = selectedAccountId === CREATE_NEW
+
+  async function handleCreateAndProcess() {
+    if (!newAccountName.trim()) return
+    setCreatingAccount(true)
+    setError(null)
+
+    try {
+      // Create the account first
+      const createRes = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newAccountName.trim() }),
+      })
+      const createData = await createRes.json()
+      if (!createRes.ok) {
+        setError(createData.error ?? 'Failed to create account')
+        setCreatingAccount(false)
+        return
+      }
+
+      const newAccount: Account = { id: createData.id, name: newAccountName.trim() }
+      onAccountCreated(newAccount)
+
+      // Now process the meeting against the new account
+      setProcessing(true)
+      const res = await fetch('/api/process-meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: newAccount.id,
+          transcript: note.content,
+          file_id: note.file_id,
+          file_name: note.file_name,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error ?? 'Processing failed')
+        setCreatingAccount(false)
+        setProcessing(false)
+        return
+      }
+
+      onRemove(note.id)
+    } catch {
+      setError('Something went wrong')
+      setCreatingAccount(false)
+      setProcessing(false)
+    }
+  }
+
   async function handleProcess() {
-    if (!selectedAccountId) return
+    if (!selectedAccountId || selectedAccountId === CREATE_NEW) return
     setProcessing(true)
     setError(null)
 
@@ -98,22 +156,32 @@ function NoteCard({
         </p>
       )}
 
+      {/* Account selector */}
       <select
         value={selectedAccountId}
-        onChange={(e) => setSelectedAccountId(e.target.value)}
+        onChange={(e) => { setSelectedAccountId(e.target.value); setError(null) }}
         className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent bg-white"
       >
         <option value="">Select account...</option>
         {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
+          <option key={a.id} value={a.id}>{a.name}</option>
         ))}
+        <option value={CREATE_NEW}>＋ Create new account</option>
       </select>
 
-      {error && (
-        <p className="text-xs text-red-600">{error}</p>
+      {/* New account name input */}
+      {isCreatingNew && (
+        <input
+          type="text"
+          value={newAccountName}
+          onChange={e => setNewAccountName(e.target.value)}
+          placeholder="Account name..."
+          autoFocus
+          className="border border-indigo-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+        />
       )}
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
 
       {confirming ? (
         <div className="flex flex-col gap-2">
@@ -136,13 +204,23 @@ function NoteCard({
         </div>
       ) : (
         <div className="flex gap-2">
-          <button
-            onClick={handleProcess}
-            disabled={!selectedAccountId || processing}
-            className="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-          >
-            {processing ? 'Processing...' : 'Process'}
-          </button>
+          {isCreatingNew ? (
+            <button
+              onClick={handleCreateAndProcess}
+              disabled={!newAccountName.trim() || creatingAccount || processing}
+              className="text-sm font-medium bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {creatingAccount || processing ? 'Creating...' : 'Create & process'}
+            </button>
+          ) : (
+            <button
+              onClick={handleProcess}
+              disabled={!selectedAccountId || processing}
+              className="text-sm font-medium bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+            >
+              {processing ? 'Processing...' : 'Process'}
+            </button>
+          )}
           <button
             onClick={() => setConfirming(true)}
             className="text-sm text-gray-500 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
@@ -157,15 +235,20 @@ function NoteCard({
 
 export default function ReviewQueue({
   notes,
-  accounts,
+  accounts: initialAccounts,
 }: {
   notes: PendingNote[]
   accounts: Account[]
 }) {
   const [localNotes, setLocalNotes] = useState(notes)
+  const [accounts, setAccounts] = useState(initialAccounts)
 
   function removeNote(id: string) {
     setLocalNotes((prev) => prev.filter((n) => n.id !== id))
+  }
+
+  function addAccount(account: Account) {
+    setAccounts(prev => [...prev, account].sort((a, b) => a.name.localeCompare(b.name)))
   }
 
   if (localNotes.length === 0) return null
@@ -182,6 +265,7 @@ export default function ReviewQueue({
             note={note}
             accounts={accounts}
             onRemove={removeNote}
+            onAccountCreated={addAccount}
           />
         ))}
       </div>

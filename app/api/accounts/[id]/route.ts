@@ -38,11 +38,12 @@ export async function PATCH(
 
     const body = await request.json()
 
+    // Team tool — any authenticated user can update any account
+    // (needed for PSM reassignment across the team)
     const { error } = await supabase
       .from('accounts')
       .update({ ...body, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .eq('psm_id', user.id)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

@@ -64,7 +64,7 @@ export async function getDriveFiles(
   refreshToken?: string,
   userId?: string
 ): Promise<Array<{ id: string; name: string; createdTime: string }>> {
-  const baseFilter = `mimeType='application/vnd.google-apps.document' and name contains 'Notes from' and createdTime > '${afterDate}'`
+  const baseFilter = `mimeType='application/vnd.google-apps.document' and (name contains 'Notes from' or name contains 'Notes by Gemini') and createdTime > '${afterDate}'`
 
   try {
     // Query 1: files inside the configured Gemini folder (owned or shared drive)
