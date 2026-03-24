@@ -96,7 +96,7 @@ async function syncConnection(
     accessToken = refreshed.access_token
   }
 
-  if (!connection.gemini_folder_id) return 0
+  if (!connection.gemini_folder_id) return { found: 0, added: 0, skipped: 0, skippedFiles: [] }
 
   const afterDate = connection.last_synced_at ?? '2000-01-01T00:00:00Z'
   const files = await getDriveFiles(
