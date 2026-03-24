@@ -10,6 +10,7 @@ import ClearMeetingButton from '../accounts/[id]/ClearMeetingButton'
 import CopyButton from '../accounts/[id]/CopyButton'
 import StickyTabs from '../accounts/[id]/StickyTabs'
 import MeetingHistory from '../accounts/[id]/MeetingHistory'
+import ContactSection from '../accounts/[id]/ContactSection'
 
 const HEALTH_STYLES: Record<string, { badge: string; label: string }> = {
   green: { badge: 'bg-green-100 text-green-700 border-green-200', label: 'Healthy' },
@@ -194,6 +195,19 @@ export default function AccountPanel({
               key={`${accountId}-${refreshKey}`}
               scrollEl={panelEl}
               xMargin="-mx-6 px-6"
+            />
+
+            {/* Contact & ownership */}
+            <ContactSection
+              key={`contact-${updatedAt}`}
+              accountId={account.id}
+              contact_email={account.contact_email ?? null}
+              telegram={account.telegram ?? null}
+              twitter_x={account.twitter_x ?? null}
+              website={account.website ?? null}
+              psm_id={account.psm_id ?? null}
+              updatedAt={updatedAt ?? ''}
+              onSaved={refetch}
             />
 
             {/* Section 1 — Overview */}

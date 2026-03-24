@@ -160,25 +160,30 @@ async function syncConnection(
 
   // ── Process each file ─────────────────────────────────────────────────
 
-  let newCount = 0
+  let added = 0
+  let skipped = 0
+  const skippedFiles: string[] = []
 
   for (const file of files) {
-    // Skip if already in pending_notes
-    const { data: existing } = await db
-      .from('pending_notes')
-      .select('id')
-      .eq('user_id', connection.user_id)
-      .eq('file_id', file.id)
-      .maybeSingle()
+    // Skip if already in pending_notes or meeting_history
+    const [{ data: existingPending }, { data: existingHistory }] = await Promise.all([
+      db.from('pending_notes').select('id').eq('user_id', connection.user_id).eq('file_id', file.id).maybeSingle(),
+      db.from('meeting_history').select('id').eq('user_id', connection.user_id).eq('file_id', file.id).maybeSingle(),
+    ])
 
-    if (existing) continue
+    if (existingPending || existingHistory) {
+      skipped++
+      skippedFiles.push(`${file.name ?? file.id} (already processed)`)
+      continue
+    }
 
     // Check meeting preference before fetching content
     if (calendarEvents.length > 0) {
       const title = extractMeetingTitle(file.name ?? '')
       const match = findBestMatch(title, calendarEvents)
       if (match && skipSet.has(match.id)) {
-        // Silently skip — user marked this meeting as 'skip'
+        skipped++
+        skippedFiles.push(`${file.name ?? file.id} (marked skip)`)
         continue
       }
     }
@@ -200,7 +205,7 @@ async function syncConnection(
       drive_created_at: file.createdTime,
     })
 
-    newCount++
+    added++
   }
 
   await db
@@ -208,7 +213,7 @@ async function syncConnection(
     .update({ last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('user_id', connection.user_id)
 
-  return newCount
+  return { found: files.length, added, skipped, skippedFiles }
 }
 
 // GET — cron trigger
@@ -225,16 +230,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, new_notes: 0 })
   }
 
-  let totalNew = 0
+  let totalAdded = 0
   for (const conn of connections) {
     try {
-      totalNew += await syncConnection(null, conn)
+      const result = await syncConnection(null, conn)
+      totalAdded += result.added
     } catch {
       // Continue with other connections on error
     }
   }
 
-  return NextResponse.json({ success: true, new_notes: totalNew })
+  return NextResponse.json({ success: true, new_notes: totalAdded })
 }
 
 // POST — manual trigger from dashboard
@@ -260,8 +266,8 @@ export async function POST() {
   }
 
   try {
-    const newCount = await syncConnection(null, connection)
-    return NextResponse.json({ success: true, new_notes: newCount })
+    const result = await syncConnection(null, connection)
+    return NextResponse.json({ success: true, new_notes: result.added, found: result.found, added: result.added, skipped: result.skipped, skipped_files: result.skippedFiles })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[drive/sync POST]', message)

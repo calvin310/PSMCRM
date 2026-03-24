@@ -13,6 +13,7 @@ type Props = {
   website: string | null
   psm_id: string | null
   updatedAt: string
+  onSaved?: () => void
 }
 
 function PencilIcon() {
@@ -47,6 +48,7 @@ export default function ContactSection({
   website,
   psm_id,
   updatedAt,
+  onSaved,
 }: Props) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
@@ -113,7 +115,11 @@ export default function ContactSection({
 
     setEditing(false)
     setSaving(false)
-    router.refresh()
+    if (onSaved) {
+      onSaved()
+    } else {
+      router.refresh()
+    }
   }
 
   const hasAnyData = contact_email || telegram || twitter_x || website || psm_id
