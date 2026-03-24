@@ -78,7 +78,7 @@ async function syncConnection(
     gemini_folder_id: string | null
     last_synced_at: string | null
   }
-): Promise<number> {
+): Promise<{ found: number; added: number; skipped: number; skippedFiles: string[] }> {
   // Always use service-role client inside syncConnection — this runs in a trusted
   // server context (cron or server-side POST) and needs to bypass RLS to operate
   // on behalf of any user.
